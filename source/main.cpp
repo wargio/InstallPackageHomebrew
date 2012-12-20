@@ -78,6 +78,7 @@ int CopyFile(const char *source, const char *dest){
 			break;
 
 		i += written;
+		GFX->Flip();
 	}
 
 out:
@@ -267,11 +268,10 @@ s32 main(s32 argc, const char* argv[]){
 
 	int set_dir = USB;
 
-	char files[256], file[90];
+	char file[90];
 	sysFSDirent entry;
-	string package_names[100];
 	int check=-1;
-	int fd, num_pkg=0;
+	int fd;
 	u64 read;
 	int usb_num=0;
 	char path [256];
@@ -286,7 +286,7 @@ s32 main(s32 argc, const char* argv[]){
 	Y+=50;
 	F.Printf(100,Y,COLOR_WHITE,15,"No USB Found.. Looking for /dev_hdd0/packages"); GFX->Flip();
 	F.Printf(100,Y,COLOR_WHITE,15,"No USB Found.. Looking for /dev_hdd0/packages"); GFX->Flip();
-	sprintf(path,"/dev_hdd0/packages");
+	sprintf(path,"/dev_hdd0/packages/");
 	if(sysLv2FsOpenDir(path,&fd) == 0){
 		set_dir = HDD;
 		goto read_dir;
@@ -297,65 +297,60 @@ read_dir:
 	F.Printf(100,Y,COLOR_WHITE,15,"Dir: %s",path); GFX->Flip();
 	F.Printf(100,Y,COLOR_WHITE,15,"Dir: %s",path); GFX->Flip();
 	Y+=20;
-	num_pkg=0;
 
 	if(set_dir != HDD)
 		sprintf(path,"/dev_usb00%d/",usb_num);
 	else
-		sprintf(path,"/dev_hdd0/packages");
+		sprintf(path,"/dev_hdd0/packages/");
 
 
-	for(int i=0;i<100;i++){
-		if(sysLv2FsReadDir(fd,&entry,&read)!=0)
-			break;
+	while(!sysLv2FsReadDir(fd,&entry,&read) && strlen(entry.d_name)>0){
 		if (!strcmp(entry.d_name, ".") || !strcmp(entry.d_name, "..") || entry.d_type != 2)
 			continue;
 		if(entry.d_name[strlen(entry.d_name)-3] == 'p' &&
 		   entry.d_name[strlen(entry.d_name)-2] == 'k' &&
 		   entry.d_name[strlen(entry.d_name)-1] == 'g')
 		{
-			package_names[num_pkg] = entry.d_name;
-			num_pkg++;
 			check++;
+			if(check==0){
+				F.Printf(100,Y,COLOR_WHITE,15,"Installing PKG.."); GFX->Flip();
+				F.Printf(100,Y,COLOR_WHITE,15,"Installing PKG.."); GFX->Flip();
+				Y+=20;
+				if(set_dir != HDD){
+					F.Printf(100,Y,COLOR_RED,15,"DO NOT PLUG OFF THE USB.."); GFX->Flip();
+					F.Printf(100,Y,COLOR_RED,15,"DO NOT PLUG OFF THE USB.."); GFX->Flip();
+				}else{
+					F.Printf(100,Y,COLOR_RED,15,"DO NOT TURN OFF THE PS3.."); GFX->Flip();
+					F.Printf(100,Y,COLOR_RED,15,"DO NOT TURN OFF THE PS3.."); GFX->Flip();
+				}
+				Y+=20;
+			}
+			string package_name, dst_pkg;
+			package_name = path;
+			package_name += entry.d_name;
+			SetAppID(package_name.c_str());
+			for(;f1<sizeof(Hex);f1++)
+				for(;f2<sizeof(Hex);f2++){
+					sprintf(file,"/dev_hdd0/vsh/task/000000%c%c",Hex[f1],Hex[f2]);
+					if(sysLv2FsMkdir(file, S_IRWXO | S_IRWXU | S_IRWXG | S_IFDIR) == 0)
+						goto copy;
+				}
+		copy:	
+			dst_pkg=file;
+			dst_pkg+="/";
+			dst_pkg+=Appid+".pkg";
+
+			if(CopyFile(package_name.c_str(),dst_pkg.c_str()))
+				goto end;
+			Create_PDB(file,entry.d_name,Get_size(dst_pkg.c_str()),Appid.c_str());
+
 		}
 		GFX->Flip();
 	}
+
 	if(check<0)
 		goto end;
 	sysLv2FsCloseDir(fd);
-
-	Y+=20;
-	F.Printf(100,Y,COLOR_WHITE,15,"Installing PKG.."); GFX->Flip();
-	F.Printf(100,Y,COLOR_WHITE,15,"Installing PKG.."); GFX->Flip();
-	Y+=20;
-	if(set_dir != HDD){
-		F.Printf(100,Y,COLOR_RED,15,"DO NOT PLUG OFF THE USB.."); GFX->Flip();
-		F.Printf(100,Y,COLOR_RED,15,"DO NOT PLUG OFF THE USB.."); GFX->Flip();
-	}else{
-		F.Printf(100,Y,COLOR_RED,15,"DO NOT TURN OFF THE PS3.."); GFX->Flip();
-		F.Printf(100,Y,COLOR_RED,15,"DO NOT TURN OFF THE PS3.."); GFX->Flip();
-	}
-
-	for(int i=0;i<num_pkg;i++){
-		if(set_dir != HDD)
-			sprintf(path,"/dev_usb00%d/%s",usb_num,package_names[i].c_str());
-		else
-			sprintf(path,"/dev_hdd0/packages/%s",package_names[i].c_str());
-
-		Y+=20;
-		SetAppID(path);
-		for(;f1<sizeof(Hex);f1++)
-			for(;f2<sizeof(Hex);f2++){
-				sprintf(file,"/dev_hdd0/vsh/task/000000%c%c",Hex[f1],Hex[f2]);
-				if(sysLv2FsMkdir(file, S_IRWXO | S_IRWXU | S_IRWXG | S_IFDIR) == 0)
-					goto copy;
-			}
-	copy:	
-		sprintf(files,"%s/%s.pkg",file,Appid.c_str());
-		if(CopyFile(path,files))
-			goto end;
-		Create_PDB(file,package_names[i].c_str(),Get_size(files),Appid.c_str());
-	}
 
 end:
 	Y+=30;
@@ -372,7 +367,7 @@ end:
 		F.Printf(100,Y,COLOR_WHITE,15,"Done! Now your PS3 will Reboot.."); GFX->Flip();
 		F.Printf(100,Y,COLOR_WHITE,15,"Done! Now your PS3 will Reboot.."); GFX->Flip();
 		sleep(10);
-		reboot_sys();
+		reboot_sys(); //only for 3.55 fw and lower
 	}
 	return 0;
 }
